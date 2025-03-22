@@ -75,12 +75,7 @@
 
   <div class="controls">
     <input type="text" id="blockText" placeholder="Was? (z. B. Yoga)" />
-    <select id="blockColor">
-      <option value="#87CEFA">Yoga (Blau)</option>
-      <option value="#FFD700">Büro (Gelb)</option>
-      <option value="#90EE90">Freizeit (Grün)</option>
-      <option value="#FF7F7F">Fahrt / Pause (Rot)</option>
-    </select>
+    <input type="color" id="blockColor" value="#87CEFA" />
     <button onclick="createNewBlock()">+ Block hinzufügen</button>
     <button onclick="savePlan()">💾 Speichern</button>
     <button onclick="loadPlan()">🔄 Laden</button>

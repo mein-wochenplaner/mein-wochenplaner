@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wochenplaner (15-Minuten Raster)</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f4f4f4;
+    }
+    h1 {
+      text-align: center;
+      margin: 1rem 0;
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    input, select, textarea, button {
+      padding: 5px;
+      font-size: 14px;
+    }
+    textarea {
+      resize: vertical;
+      height: 50px;
+      width: 200px;
+    }
+    .calendar {
+      display: grid;
+      grid-template-columns: 80px repeat(7, 1fr);
+      border-top: 2px solid #ccc;
+    }
+    .time, .cell {
+      border: 1px solid #ddd;
+      height: 30px;
+      font-size: 12px;
+    }
+    .time {
+      text-align: right;
+      padding-right: 5px;
+      background: #eee;
+    }
+    .header {
+      background: #ccc;
+      font-weight: bold;
+      text-align: center;
+      padding: 5px;
+      border: 1px solid #bbb;
+    }
+    .cell {
+      position: relative;
+    }
+    .block {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      cursor: move;
+      padding: 6px;
+      box-sizing: border-box;
+      font-size: 12px;
+      overflow: hidden;
+    }
+    .block:hover {
+      outline: 2px dashed #333;
+    }
+    @media print {
+      .controls {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>Mein Wochenplaner</h1>
+
+  <div class="controls">
+    <textarea id="blockText" placeholder="Text für Block (Markdown unterstützt)"></textarea>
+    <input type="color" id="blockColor" value="#87CEFA" title="Blockfarbe" />
+    <select id="blockTextColor">
+      <option value="white">Weiße Schrift</option>
+      <option value="black">Schwarze Schrift</option>
+    </select>
+    <select id="blockHeight">
+      <option value="1">15 Min</option>
+      <option value="2">30 Min</option>
+      <option value="4">60 Min</option>
+    </select>
+    <button onclick="createNewBlock()">+ Block hinzufügen</button>
+    <button onclick="undoDelete()">↩️ Rückgängig</button>
+    <button onclick="savePlan()">💾 Speichern</button>
+    <button onclick="loadPlan()">🔄 Laden</button>
+    <button onclick="clearPlan()">🧹 Leeren</button>
+    <button onclick="window.print()">🖨️ Als PDF speichern</button>
+  </div>
+
+  <div class="calendar" id="calendar"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script>
+    const days = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
+    const startHour = 6;
+    const endHour = 22;
+    const interval = 15;
+    const calendar = document.getElementById("calendar");
+    let lastDeletedBlock = null;
+
+    calendar.appendChild(document.createElement("div"));
+    days.forEach(day => {
+      const div = document.createElement("div");
+      div.className = "header";
+      div.textContent = day;
+      calendar.appendChild(div);
+    });
+
+    for (let hour = startHour; hour < endHour; hour++) {
+      for (let m = 0; m < 60; m += interval) {
+        const hh = hour.toString().padStart(2, '0');
+        const mm = m.toString().padStart(2, '0');
+        const timeLabel = document.createElement("div");
+        timeLabel.className = "time";
+        timeLabel.textContent = `${hh}:${mm}`;
+        calendar.appendChild(timeLabel);
+
+        for (let d = 0; d < days.length; d++) {
+          const cell = document.createElement("div");
+          cell.className = "cell";
+          cell.ondrop = drop;
+          cell.ondragover = allowDrop;
+          cell.dataset.time = `${hh}:${mm}`;
+          cell.dataset.day = days[d];
+          calendar.appendChild(cell);
+        }
+      }
+    }
+
+    function allowDrop(ev) { ev.preventDefault(); }
+
+    function drag(ev) { ev.dataTransfer.setData("text", ev.target.id); }
+
+    function drop(ev) {
+      ev.preventDefault();
+      const data = ev.dataTransfer.getData("text");
+      const block = document.getElementById(data);
+      ev.target.appendChild(block);
+      savePlan();
+    }
+
+    function createBlock(text, color, textColor, id, height) {
+      const block = document.createElement("div");
+      block.className = "block";
+      block.innerHTML = marked.parse(text);
+      block.style.backgroundColor = color;
+      block.style.color = textColor;
+      block.style.height = `${30 * height}px`;
+      block.draggable = true;
+      block.id = id;
+      block.ondragstart = drag;
+      block.onclick = () => editBlock(block);
+      block.oncontextmenu = (e) => {
+        e.preventDefault();
+        lastDeletedBlock = { ...block.dataset, html: block.innerHTML, id: block.id, style: block.getAttribute("style") };
+        block.remove();
+        savePlan();
+      };
+      return block;
+    }
+
+    function createNewBlock() {
+      const text = document.getElementById("blockText").value.trim();
+      const color = document.getElementById("blockColor").value;
+      const textColor = document.getElementById("blockTextColor").value;
+      const height = parseInt(document.getElementById("blockHeight").value);
+      if (!text) return alert("Bitte Text eingeben.");
+      const block = createBlock(text, color, textColor, "block" + Date.now(), height);
+      const firstCell = document.querySelector(".cell");
+      firstCell.appendChild(block);
+      savePlan();
+    }
+
+    function editBlock(block) {
+      const newText = prompt("Text bearbeiten (Markdown erlaubt):", block.textContent);
+      if (newText !== null) {
+        block.innerHTML = marked.parse(newText);
+        savePlan();
+      }
+    }
+
+    function undoDelete() {
+      if (!lastDeletedBlock) return;
+      const cell = Array.from(document.querySelectorAll(".cell"))
+        .find(c => c.dataset.day === lastDeletedBlock.day && c.dataset.time === lastDeletedBlock.time);
+      if (!cell) return;
+      const div = document.createElement("div");
+      div.className = "block";
+      div.id = lastDeletedBlock.id;
+      div.innerHTML = lastDeletedBlock.html;
+      div.setAttribute("style", lastDeletedBlock.style);
+      div.draggable = true;
+      div.ondragstart = drag;
+      div.onclick = () => editBlock(div);
+      div.oncontextmenu = (e) => {
+        e.preventDefault();
+        lastDeletedBlock = { ...div.dataset, html: div.innerHTML, id: div.id, style: div.getAttribute("style") };
+        div.remove();
+        savePlan();
+      };
+      cell.appendChild(div);
+      lastDeletedBlock = null;
+      savePlan();
+    }
+
+    function savePlan() {
+      const blocks = document.querySelectorAll(".block");
+      const data = [];
+      blocks.forEach(block => {
+        const parent = block.parentElement;
+        data.push({
+          id: block.id,
+          html: block.innerHTML,
+          style: block.getAttribute("style"),
+          day: parent.dataset.day,
+          time: parent.dataset.time
+        });
+      });
+      localStorage.setItem("wochenplan", JSON.stringify(data));
+    }
+
+    function loadPlan() {
+      clearPlan();
+      const data = JSON.parse(localStorage.getItem("wochenplan"));
+      if (!data) return;
+      data.forEach(item => {
+        const block = document.createElement("div");
+        block.className = "block";
+        block.id = item.id;
+        block.innerHTML = item.html;
+        block.setAttribute("style", item.style);
+        block.draggable = true;
+        block.ondragstart = drag;
+        block.onclick = () => editBlock(block);
+        block.oncontextmenu = (e) => {
+          e.preventDefault();
+          lastDeletedBlock = { ...block.dataset, html: block.innerHTML, id: block.id, style: block.getAttribute("style") };
+          block.remove();
+          savePlan();
+        };
+        const cell = Array.from(document.querySelectorAll(".cell"))
+          .find(c => c.dataset.day === item.day && c.dataset.time === item.time);
+        if (cell) cell.appendChild(block);
+      });
+    }
+
+    function clearPlan() {
+      document.querySelectorAll(".block").forEach(b => b.remove());
+    }
+
+    window.onload = loadPlan;
+  </script>
+</body>
+</html>
